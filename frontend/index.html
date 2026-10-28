@@ -30,6 +30,9 @@
       --danger: #c0392b;
       --ok: #3d7a4a;
       --logo-filter: none;
+      /* iOS 시스템 fill·placeholder (검색 필드) */
+      --fill: rgba(118, 118, 128, 0.12);
+      --placeholder: rgba(60, 60, 67, 0.6);
       /* PC에서도 모바일 폭으로 - 고정 요소(탭바·시트·라이트박스)도 이 폭에 맞춘다 */
       --app-w: 480px;
     }
@@ -46,6 +49,8 @@
       --danger: #e07060;
       --ok: #6fbf7f;
       --logo-filter: brightness(0) invert(0.85);
+      --fill: rgba(118, 118, 128, 0.24);
+      --placeholder: rgba(235, 235, 245, 0.6);
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme='light']) {
@@ -60,6 +65,8 @@
         --danger: #e07060;
         --ok: #6fbf7f;
         --logo-filter: brightness(0) invert(0.85);
+        --fill: rgba(118, 118, 128, 0.24);
+        --placeholder: rgba(235, 235, 245, 0.6);
       }
     }
     html { font-size: 15px; }

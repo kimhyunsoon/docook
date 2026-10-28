@@ -10,15 +10,13 @@ import { openMealSheet } from '../sheets/meal-sheet.js';
 import type { RecipeSummary } from '../types.js';
 import '../components/recipe-item.js';
 
-type ViewMode = 'group' | 'list';
-type SortKey = 'recent' | 'stale' | 'count' | 'name';
+type SortKey = 'recent' | 'stale' | 'country';
 
 const STATE_KEY = 'docook:recipes-state';
 const SORTS: { key: SortKey; label: string }[] = [
   { key: 'recent', label: '최근 먹은' },
   { key: 'stale', label: '오래 안 먹은' },
-  { key: 'count', label: '많이 먹은' },
-  { key: 'name', label: '이름' },
+  { key: 'country', label: '국가별' },
 ];
 
 // 레시피 분류 순서 (backend vocab.ts RECIPE_CATEGORIES와 동일)
@@ -34,8 +32,21 @@ function cmpDate(a: string | null, b: string | null, desc: boolean): number {
 
 const byName = (a: RecipeSummary, b: RecipeSummary): number => a.name.localeCompare(b.name, 'ko');
 
-// 요리 탭 - 분류별 그룹 / 정렬 목록, 검색(이름·재료), 오늘 먹음 체크
-// 모드·정렬은 해시 쿼리와 localStorage에 기록되어 상세→뒤로가기·재접속에도 보존된다
+const pick = <T>(list: T[]): T => list[Math.floor(Math.random() * list.length)]!;
+
+// 검색창 예시 - 등록된 요리 하나에서 재료 2개를 골라 '달걀, 토마토'처럼 (그대로 검색하면 결과가 나온다)
+// 양념·향신료는 빼고(main_ingredients), 재료가 2개 이상인 요리가 없으면 빈 문자열 → '재료로 검색해보세요!'
+function randomExample(recipes: RecipeSummary[]): string {
+  const candidates = recipes.filter((r) => new Set(r.main_ingredients).size >= 2);
+  if (candidates.length === 0) return '';
+  const names = [...new Set(pick(candidates).main_ingredients)];
+  const first = pick(names);
+  const second = pick(names.filter((n) => n !== first));
+  return `${first}, ${second}`;
+}
+
+// 요리 탭 - 검색(이름·재료, 쉼표로 AND) + 정렬(최근 먹은·오래 안 먹은·국가별 묶음), 오늘 먹음 체크
+// 정렬은 해시 쿼리와 localStorage에 기록되어 상세→뒤로가기·재접속에도 보존된다
 @customElement('recipes-view')
 export class RecipesView extends LitElement {
   static styles = [
@@ -46,24 +57,42 @@ export class RecipesView extends LitElement {
       .top {
         position: sticky; top: 0; z-index: 5;
         background: var(--bg);
-        padding: calc(12px + env(safe-area-inset-top)) 16px 10px;
+        padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
         border-bottom: 1px solid var(--border);
       }
-      .title-row { display: flex; align-items: center; gap: 4px; }
-      .title-row h1 { font-size: 1.15rem; margin: 0; flex: 1; }
-      .title-row button {
-        color: var(--text-sub); background: none; padding: 7px;
-        display: grid; place-items: center;
+      /* iOS 검색 필드 - 캡슐형, 시스템 fill(tertiarySystemFill) 배경, 포커스 링 없음 */
+      .search {
+        position: relative;
+        display: flex; align-items: center;
+        height: 36px; border-radius: 999px;
+        background: var(--fill);
+        color: var(--placeholder);
       }
-      .title-row button.on { color: var(--accent); }
-      .search-row { padding-top: 8px; }
-      .mode-row { padding-top: 8px; }
-      .sort-row { display: flex; gap: 6px; padding-top: 8px; overflow-x: auto; scrollbar-width: none; }
+      .search .lead { position: absolute; left: 12px; pointer-events: none; display: grid; }
+      .search input {
+        flex: 1; height: 100%; min-width: 0;
+        border: none; outline: none; background: none; border-radius: 999px;
+        padding: 0 34px 0 34px;
+        font-size: 0.93rem; letter-spacing: -0.1px; color: var(--text);
+        caret-color: var(--accent);
+      }
+      .search input:focus { outline: none; }
+      .search input::placeholder { color: var(--placeholder); opacity: 1; }
+      .search input::-webkit-search-cancel-button { display: none; }
+      /* xmark.circle.fill */
+      .search .clear {
+        position: absolute; right: 9px;
+        width: 18px; height: 18px; border-radius: 50%;
+        display: grid; place-items: center; padding: 0;
+        background: var(--placeholder);
+      }
+      .search .clear svg { color: var(--bg); }
+      .sort-row { display: flex; gap: 6px; padding-top: 10px; overflow-x: auto; scrollbar-width: none; }
       .sort-row::-webkit-scrollbar { display: none; }
       .sort-chip {
-        padding: 6px 11px; border-radius: 999px;
+        padding: 6px 12px; border-radius: 999px;
         background: var(--accent-soft); color: var(--text-sub);
-        font-size: 0.78rem; white-space: nowrap; flex-shrink: 0;
+        font-size: 0.8rem; white-space: nowrap; flex-shrink: 0;
       }
       .sort-chip.on { background: var(--accent); color: #fff; font-weight: 700; }
       .group-head {
@@ -86,8 +115,7 @@ export class RecipesView extends LitElement {
   @state() private recipes: RecipeSummary[] = [];
   @state() private loaded = false;
   @state() private q = '';
-  @state() private searchOpen = false;
-  @state() private view: ViewMode = 'group';
+  @state() private placeholder = '';
   @state() private sort: SortKey = 'recent';
   @state() private pulling = false;
 
@@ -104,12 +132,12 @@ export class RecipesView extends LitElement {
     void this.load();
   }
 
-  // 복원 우선순위: 해시 쿼리 > localStorage > 기본(그룹)
+  // 복원 우선순위: 해시 쿼리 > localStorage > 기본(최근 먹은)
   private restoreState(): void {
     const { params } = parseHash(location.hash);
-    let saved: { view?: string; sort?: string } = {};
-    if (params.has('view')) {
-      saved = { view: params.get('view')!, sort: params.get('sort') ?? '' };
+    let saved: { sort?: string } = {};
+    if (params.has('sort')) {
+      saved = { sort: params.get('sort')! };
     } else {
       try {
         saved = JSON.parse(localStorage.getItem(STATE_KEY) ?? '{}') as typeof saved;
@@ -117,28 +145,34 @@ export class RecipesView extends LitElement {
         saved = {};
       }
     }
-    if (saved.view === 'list') this.view = 'list';
     const sort = SORTS.find((s) => s.key === saved.sort);
     if (sort) this.sort = sort.key;
     this.syncState();
   }
 
   private syncState(): void {
-    const isList = this.view === 'list';
-    replaceHashQuery('#/recipes', { view: isList ? 'list' : null, sort: isList ? this.sort : null });
-    localStorage.setItem(STATE_KEY, JSON.stringify({ view: this.view, sort: this.sort }));
+    replaceHashQuery('#/recipes', { sort: this.sort === 'recent' ? null : this.sort });
+    localStorage.setItem(STATE_KEY, JSON.stringify({ sort: this.sort }));
   }
 
   private async load(): Promise<void> {
     this.recipes = await loadRecipes();
     this.loaded = true;
+    if (!this.placeholder) this.placeholder = randomExample(this.recipes);
   }
 
+  // 쉼표로 나눈 검색어를 모두 만족하는 요리 ('달걀, 토마토' = 둘 다 쓰는 요리)
   private get visible(): RecipeSummary[] {
-    const q = this.q.trim().toLowerCase();
-    if (!q) return this.recipes;
-    return this.recipes.filter(
-      (r) => r.name.toLowerCase().includes(q) || r.ingredient_names.some((n) => n.toLowerCase().includes(q)),
+    const terms = this.q
+      .toLowerCase()
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (terms.length === 0) return this.recipes;
+    return this.recipes.filter((r) =>
+      terms.every(
+        (t) => r.name.toLowerCase().includes(t) || r.ingredient_names.some((n) => n.toLowerCase().includes(t)),
+      ),
     );
   }
 
@@ -199,8 +233,8 @@ export class RecipesView extends LitElement {
     }
     const visible = this.visible;
     if (visible.length === 0) return html`<div class="empty">검색 결과가 없어요</div>`;
-    if (this.view === 'group') {
-      // 그룹 안은 이름순 고정 - 체크해도 순서가 흔들리지 않게
+    if (this.sort === 'country') {
+      // 국가 안은 이름순 고정 - 체크해도 순서가 흔들리지 않게
       const groups = new Map<string, RecipeSummary[]>();
       for (const r of [...visible].sort(byName)) {
         if (!groups.has(r.category)) groups.set(r.category, []);
@@ -217,9 +251,7 @@ export class RecipesView extends LitElement {
     const sorted = [...visible].sort((a, b) => {
       switch (this.sort) {
         case 'recent': return cmpDate(a.last_eaten_on, b.last_eaten_on, true) || byName(a, b);
-        case 'stale': return cmpDate(a.last_eaten_on, b.last_eaten_on, false) || byName(a, b);
-        case 'count': return b.meal_count - a.meal_count || byName(a, b);
-        default: return byName(a, b);
+        default: return cmpDate(a.last_eaten_on, b.last_eaten_on, false) || byName(a, b);
       }
     });
     return html`${sorted.map((r) => this.renderItem(r))}`;
@@ -247,45 +279,29 @@ export class RecipesView extends LitElement {
         @touchend=${this.onTouchEnd}
       >
         <div class="top">
-          <div class="title-row">
-            <h1>요리 ${this.loaded ? this.visible.length : ''}</h1>
-            <button aria-label="검색" class=${this.searchOpen ? 'on' : ''} @click=${(): void => {
-              this.searchOpen = !this.searchOpen;
-              if (!this.searchOpen) this.q = '';
-            }}>${icon(this.searchOpen ? 'x' : 'search')}</button>
+          <label class="search">
+            <span class="lead">${icon('search', 15)}</span>
+            <input
+              type="search"
+              enterkeyhint="search"
+              placeholder=${this.placeholder || '재료로 검색해보세요!'}
+              .value=${this.q}
+              @input=${(e: Event): void => { this.q = (e.target as HTMLInputElement).value; }}
+            >
+            ${this.q
+              ? html`<button class="clear" aria-label="지우기" @click=${(e: Event): void => { e.preventDefault(); this.q = ''; }}>${icon('x', 12)}</button>`
+              : nothing}
+          </label>
+          <div class="sort-row">
+            ${SORTS.map(
+              (s) => html`
+                <button
+                  class="sort-chip ${this.sort === s.key ? 'on' : ''}"
+                  @click=${(): void => { this.sort = s.key; this.syncState(); }}
+                >${s.label}</button>
+              `,
+            )}
           </div>
-          ${this.searchOpen
-            ? html`
-                <div class="search-row">
-                  <input
-                    type="search"
-                    placeholder="요리 이름·재료로 검색"
-                    .value=${this.q}
-                    @input=${(e: Event): void => { this.q = (e.target as HTMLInputElement).value; }}
-                  >
-                </div>
-              `
-            : nothing}
-          <div class="mode-row">
-            <div class="segmented">
-              <button class=${this.view === 'group' ? 'on' : ''} @click=${(): void => { this.view = 'group'; this.syncState(); }}>분류</button>
-              <button class=${this.view === 'list' ? 'on' : ''} @click=${(): void => { this.view = 'list'; this.syncState(); }}>목록</button>
-            </div>
-          </div>
-          ${this.view === 'list'
-            ? html`
-                <div class="sort-row">
-                  ${SORTS.map(
-                    (s) => html`
-                      <button
-                        class="sort-chip ${this.sort === s.key ? 'on' : ''}"
-                        @click=${(): void => { this.sort = s.key; this.syncState(); }}
-                      >${s.label}</button>
-                    `,
-                  )}
-                </div>
-              `
-            : nothing}
         </div>
         <div class="ptr ${this.pulling ? 'show' : ''}">놓으면 새로고침</div>
 
