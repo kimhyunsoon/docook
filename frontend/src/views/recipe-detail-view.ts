@@ -2,7 +2,7 @@ import { LitElement, html, css, nothing, svg, type TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, ui } from '../style.js';
 import { api, today, addDays, fileUrl } from '../api.js';
-import { toast, uiConfirm, Press } from '../ui.js';
+import { toast, uiConfirm } from '../ui.js';
 import { icon } from '../icons.js';
 import { fmtDate, fmtDateLong, fmtRel, fmtAmount, avgGap } from '../fmt.js';
 import { refreshRecipes } from '../store.js';
@@ -113,18 +113,9 @@ export class RecipeDetailView extends LitElement {
   @state() private recipe: RecipeDetail | null = null;
   @state() private logView: 'graph' | 'list' = 'graph';
 
-  private mealGesture = new Press(
-    () => void this.checkToday(),
-    () => void this.record(false),
-  );
-
   connectedCallback(): void {
     super.connectedCallback();
     void this.load();
-    if (!localStorage.getItem('hint-record')) {
-      localStorage.setItem('hint-record', '1');
-      setTimeout(() => toast('먹었어요 버튼을 길게 누르면 다른 날짜로 기록할 수 있어요', { duration: 4000 }), 600);
-    }
   }
 
   private async load(): Promise<void> {
@@ -153,12 +144,6 @@ export class RecipeDetailView extends LitElement {
 
   private get eatenToday(): boolean {
     return this.recipe?.meals[0]?.eaten_on === today();
-  }
-
-  private async checkToday(): Promise<void> {
-    await api(`/api/recipes/${this.recipeId}/meals`, { method: 'POST' });
-    toast('오늘 먹은 기록을 남겼어요', { duration: 1600 });
-    await this.reload();
   }
 
   private async undo(): Promise<void> {
@@ -430,14 +415,7 @@ export class RecipeDetailView extends LitElement {
         ${this.eatenToday
           ? html`<button class="btn-primary done" @click=${(): void => void this.undo()}>오늘 먹음 취소</button>`
           : html`
-              <button
-                class="btn-primary"
-                @pointerdown=${this.mealGesture.down}
-                @pointermove=${this.mealGesture.move}
-                @pointerup=${this.mealGesture.up}
-                @pointercancel=${this.mealGesture.up}
-                @click=${this.mealGesture.click}
-              >오늘 먹었어요</button>
+              <button class="btn-primary" @click=${(): void => void this.record(false)}>먹었어요</button>
             `}
         <button class="btn-soft" @click=${(): void => void this.record(true)}>${icon('camera', 17)} 사진</button>
       </div>

@@ -2,14 +2,13 @@ import { LitElement, html, css, nothing, type TemplateResult } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, ui } from '../style.js';
 import { today, addDays, fileUrl } from '../api.js';
-import { Press } from '../ui.js';
 import { icon } from '../icons.js';
 import { fmtRel, categoryEmoji } from '../fmt.js';
 import type { RecipeSummary } from '../types.js';
 
 const STRIP_WEEKS = 12;
 
-// 목록 아이템 - 탭 → open / 체크 버튼 탭 → check(오늘 먹음) / 길게 → record(날짜·사진 시트)
+// 목록 아이템 - 탭 → open / 먹음 버튼 탭 → record(날짜·사진 시트)
 // 오늘 이미 먹었으면 흐린 체크 버튼 (재탭 = 오늘 기록 취소 → undo)
 @customElement('recipe-item')
 export class RecipeItem extends LitElement {
@@ -61,11 +60,6 @@ export class RecipeItem extends LitElement {
   private emit(name: string): void {
     this.dispatchEvent(new CustomEvent(name, { bubbles: true, composed: true }));
   }
-
-  private actGesture = new Press(
-    () => this.emit('check'),
-    () => this.emit('record'),
-  );
 
   // 이번 주를 마지막 칸으로, 주별 먹은 횟수
   private weekCounts(base: string): number[] {
@@ -119,12 +113,11 @@ export class RecipeItem extends LitElement {
           : html`
               <button
                 class="act"
-                aria-label="오늘 먹음"
-                @pointerdown=${(e: PointerEvent): void => { e.stopPropagation(); this.actGesture.down(e); }}
-                @pointermove=${this.actGesture.move}
-                @pointerup=${this.actGesture.up}
-                @pointercancel=${this.actGesture.up}
-                @click=${(e: Event): void => { e.stopPropagation(); this.actGesture.click(e); }}
+                aria-label="먹은 기록 추가"
+                @click=${(e: Event): void => {
+                  e.stopPropagation();
+                  this.emit('record');
+                }}
               >${icon('utensils', 20)}</button>
             `}
       </div>

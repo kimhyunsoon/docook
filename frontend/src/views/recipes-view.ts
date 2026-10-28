@@ -5,7 +5,7 @@ import { toast } from '../ui.js';
 import { icon } from '../icons.js';
 import { parseHash, replaceHashQuery } from '../router.js';
 import { cachedRecipes, loadRecipes } from '../store.js';
-import { checkToday, undoToday, saveMeal } from '../actions.js';
+import { undoToday, saveMeal } from '../actions.js';
 import { openMealSheet } from '../sheets/meal-sheet.js';
 import type { RecipeSummary } from '../types.js';
 import '../components/recipe-item.js';
@@ -176,17 +176,12 @@ export class RecipesView extends LitElement {
     );
   }
 
-  private async onCheck(r: RecipeSummary): Promise<void> {
-    await checkToday(r.id, r.name, () => void this.load());
-    await this.load();
-  }
-
   private async onUndo(r: RecipeSummary): Promise<void> {
     await undoToday(r.id);
     await this.load();
   }
 
-  // 체크 버튼 길게 = 날짜·사진 선택 기록
+  // 먹음 버튼 탭 = 날짜·사진 선택 기록
   private async onRecord(r: RecipeSummary): Promise<void> {
     const input = await openMealSheet({ recipeName: r.name });
     if (!input) return;
@@ -215,7 +210,6 @@ export class RecipesView extends LitElement {
       <recipe-item
         .recipe=${r}
         @open=${(): void => { location.hash = `#/recipes/${r.id}`; }}
-        @check=${(): void => void this.onCheck(r)}
         @undo=${(): void => void this.onUndo(r)}
         @record=${(): void => void this.onRecord(r)}
       ></recipe-item>
