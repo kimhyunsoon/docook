@@ -1,0 +1,15 @@
+{
+  "name": "두쿡",
+  "short_name": "두쿡",
+  "description": "내 요리 레시피·먹은 기록",
+  "lang": "ko",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fbf8f4",
+  "theme_color": "#d9622b",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
