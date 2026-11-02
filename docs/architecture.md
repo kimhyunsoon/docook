@@ -26,7 +26,7 @@ docook/
 │   ├── app-root.ts          # 해시 라우터 (#/recipes #/recipes/:id #/calendar #/settings #/login)
 │   ├── actions.ts           # 먹은 기록·사진 업로드 공용 동작
 │   ├── components/          # tab-bar · recipe-item(목록 행 + 12주 미니 그래프)
-│   ├── sheets/              # sheet-base · meal-sheet(날짜+사진) · date-sheet(월 달력) · photo-lightbox
+│   ├── sheets/              # sheet-base · meal-sheet(날짜+사진) · menu-sheet(메뉴 추가) · recipe-picker(달력 기록 추가용 요리 고르기) · date-sheet(월 달력) · photo-lightbox
 │   └── views/               # login · recipes · recipe-detail · calendar · settings
 ├── deploy/                  # docker-compose.yml + deploy.sh (donoti와 동일)
 ├── docs/                    # architecture · recipe-registration(Claude 등록 절차) · recipe-normalization(정규화 규칙) · server-setup.sh
@@ -49,14 +49,14 @@ docook/
 
 ## 핵심 규칙
 
-- **레시피 등록·수정·삭제는 API 전용** (앱 UI 없음). `POST /api/recipes`(`?dry_run=1`로 검증만), `PUT /api/recipes/:id`(전체 교체), `DELETE`. 검증 오류는 `400 {error:'validation', details:[항목별 사유]}`로 모아 돌려준다 - Claude가 스스로 고치게. 마스터에 없는 재료는 `category`를 명시해야만 생성되고 응답 `created_ingredients`로 보고된다.
+- **레시피 등록·수정·삭제는 API 전용**. 앱은 **메뉴 추가**(이름·국가 + 사진 선택, 재료·조리 순서 없음)만 같은 `POST /api/recipes`로 한다 - 재료·조리 순서가 없는 메뉴는 상세에서 두 블록을 숨긴다. `POST /api/recipes`(`?dry_run=1`로 검증만), `PUT /api/recipes/:id`(전체 교체), `DELETE`. 검증 오류는 `400 {error:'validation', details:[항목별 사유]}`로 모아 돌려준다 - Claude가 스스로 고치게. 마스터에 없는 재료는 `category`를 명시해야만 생성되고 응답 `created_ingredients`로 보고된다.
 - **사진 = 먹은 기록**: 사진을 올리면(또는 날짜를 바꾸면) 그 날짜의 먹은 기록이 함께 생긴다. 먹은 기록을 지워도 사진은 남는다.
 - **대표 사진**: `is_primary` 지정 사진, 없으면 최근 사진(`ORDER BY is_primary DESC, taken_on DESC, id DESC`). 목록·상세·달력이 같은 정렬을 쓴다. 대표 해제 = 최근 사진으로 복귀.
 - **사진 업로드**: 클라이언트가 원본을 긴 변 2048px JPEG로, 축소본을 480px로 줄여 multipart(`taken_on` 필드 → `file` → `thumb`)로 보낸다. 디코딩 못 하는 포맷은 원본 그대로. 파일은 `{DATA_DIR}/photos/`, `/api/files/photos/*`로 로그인 필수 서빙(파일명 고유 → 30일 immutable 캐시).
-- **목록**: 분류별 그룹 / 정렬 목록(최근 먹은·오래 안 먹은·많이 먹은·이름), 'n일 전 먹음' + 최근 12주 미니 그래프(한 칸 = 한 주). 먹음 버튼 탭 = 날짜·사진 시트(상세의 '먹었어요' 버튼도 동일), 오늘 이미 먹었으면 흐린 버튼(재탭 = 취소).
+- **목록**: 검색창 옆 `+` = 메뉴 추가. 분류별 그룹 / 정렬 목록(최근 먹은·오래 안 먹은·많이 먹은·이름), 'n일 전 먹음' + 최근 12주 미니 그래프(한 칸 = 한 주). 먹음 버튼 탭 = 날짜·사진 시트(상세의 '먹었어요' 버튼도 동일), 오늘 이미 먹었으면 흐린 버튼(재탭 = 취소).
 - **상세**: 대표 사진(없으면 영역 없음), 재료의 대체 재료는 `A / 혹은 B`로 한 줄 묶음, 마지막·횟수·평균 간격, 재료(묶음별)·조리 순서·팁, 먹은 기록 히트맵(26주, 사진 있는 날 진하게)/목록, 날짜별 사진(라이트박스에서 대표 지정·삭제).
 - **화면 폭**: PC에서도 모바일 폭(`--app-w` 480px, index.html)으로 가운데 표시. 탭바·바텀시트·라이트박스도 같은 폭.
-- **달력**: 월 달력에 날짜별 썸네일(그날 사진 우선), 날짜 탭 → 그날 먹은 요리 목록. `GET /api/meals?from&to`.
+- **달력**: 월 달력에 날짜별 썸네일(그날 사진 우선), 날짜 탭 → 그날 먹은 요리 목록, `+ 기록`으로 그날 기록 추가(요리 고르기 → 사진 선택, 없는 요리는 새 메뉴로). `GET /api/meals?from&to`.
 
 ## 배포 토폴로지
 

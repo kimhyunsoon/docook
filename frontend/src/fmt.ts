@@ -66,6 +66,9 @@ const CATEGORY_EMOJI: Record<string, string> = {
   멕시코: '🇲🇽',
 };
 
+// 레시피 분류 순서 (backend vocab.ts RECIPE_CATEGORIES와 동일)
+export const CATEGORY_ORDER = ['한국', '일본', '중국', '대만', '미국', '프랑스', '이탈리아', '인도네시아', '태국', '베트남', '인도', '멕시코', '퓨전'];
+
 export function categoryEmoji(category: string): string {
   return CATEGORY_EMOJI[category] ?? '🍳';
 }

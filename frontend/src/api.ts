@@ -49,18 +49,46 @@ async function resizeImage(file: File, maxSide: number, quality: number): Promis
   }
 }
 
+// multipart 전송 - fetch는 업로드 진행률을 주지 않아 XHR 사용 (401 처리는 api()와 동일)
+function postForm(path: string, form: FormData, onProgress?: (ratio: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', path);
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (e): void => {
+      if (e.lengthComputable) onProgress?.(e.loaded / e.total);
+    };
+    xhr.onload = (): void => {
+      if (xhr.status === 401) {
+        location.hash = '#/login';
+        return; // api()와 같이 조용히 중단
+      }
+      if (xhr.status < 200 || xhr.status >= 300) reject(new Error(`api_error_${xhr.status}`));
+      else resolve();
+    };
+    xhr.onerror = (): void => reject(new Error('network_error'));
+    xhr.send(form);
+  });
+}
+
 /**
  * 요리 사진 업로드 - 원본은 긴 변 2048px, 목록·달력용 축소본은 480px로 줄여 함께 보낸다.
  * 사진 날짜(takenOn)의 먹은 기록도 서버가 함께 만든다.
+ * @param onProgress 전송 진행률(0~1). 축소 중에는 불리지 않는다
  */
-export async function uploadPhoto(recipeId: number, file: File, takenOn: string): Promise<void> {
+export async function uploadPhoto(
+  recipeId: number,
+  file: File,
+  takenOn: string,
+  onProgress?: (ratio: number) => void,
+): Promise<void> {
   const [full, thumb] = await Promise.all([resizeImage(file, 2048, 0.86), resizeImage(file, 480, 0.8)]);
   const form = new FormData();
   // 텍스트 필드는 파일보다 먼저 (multipart 스트림 순서)
   form.append('taken_on', takenOn);
   form.append('file', full ?? file, 'photo.jpg');
   if (thumb) form.append('thumb', thumb, 'thumb.jpg');
-  await api(`/api/recipes/${recipeId}/photos`, { method: 'POST', body: form });
+  await postForm(`/api/recipes/${recipeId}/photos`, form, onProgress);
 }
 
 // 숨겨진 file input으로 사진 고르기 (사용자 제스처 안에서 호출해야 iOS에서 열린다)

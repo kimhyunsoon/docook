@@ -420,18 +420,22 @@ export class RecipeDetailView extends LitElement {
         <button class="btn-soft" @click=${(): void => void this.record(true)}>${icon('camera', 17)} 사진</button>
       </div>
 
-      <div class="block card">
-        <h2>
-          재료 <span class="count">${r.ingredients.filter((i) => !i.alternative).length}</span>
-          ${r.servings ? html`<span class="grow"></span><span class="count">${r.servings}인분 기준</span>` : nothing}
-        </h2>
-        ${this.renderIngredients()}
-      </div>
+      ${r.ingredients.length === 0 && r.steps.length === 0
+        ? nothing // 앱에서 추가한 메뉴 (레시피 없음)
+        : html`
+            <div class="block card">
+              <h2>
+                재료 <span class="count">${r.ingredients.filter((i) => !i.alternative).length}</span>
+                ${r.servings ? html`<span class="grow"></span><span class="count">${r.servings}인분 기준</span>` : nothing}
+              </h2>
+              ${this.renderIngredients()}
+            </div>
 
-      <div class="block card">
-        <h2>조리 순서</h2>
-        ${this.renderSteps()}
-      </div>
+            <div class="block card">
+              <h2>조리 순서</h2>
+              ${this.renderSteps()}
+            </div>
+          `}
 
       <div class="block">
         <h2>

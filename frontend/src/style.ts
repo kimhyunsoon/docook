@@ -30,6 +30,7 @@ export const ui = css`
     font-weight: 700;
     width: 100%;
   }
+  .btn-primary:disabled { opacity: 0.4; cursor: default; }
   .btn-soft {
     background: var(--accent-soft);
     color: var(--accent);

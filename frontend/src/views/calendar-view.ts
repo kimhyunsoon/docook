@@ -5,6 +5,10 @@ import { api, today, fileUrl } from '../api.js';
 import { icon } from '../icons.js';
 import { parseHash, replaceHashQuery } from '../router.js';
 import { fmtDateLong, categoryEmoji } from '../fmt.js';
+import { saveMeal, addMenu } from '../actions.js';
+import { openMealSheet } from '../sheets/meal-sheet.js';
+import { openMenuSheet } from '../sheets/menu-sheet.js';
+import { pickRecipe } from '../sheets/recipe-picker.js';
 import type { CalendarMeal } from '../types.js';
 
 const DOW_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
@@ -54,7 +58,9 @@ export class CalendarView extends LitElement {
         font-size: 0.62rem; font-weight: 700; color: #fff;
         background: var(--accent); border-radius: 6px; padding: 0 4px;
       }
-      .list-head { margin: 16px 18px 4px; font-weight: 700; font-size: 0.95rem; }
+      .list-head { margin: 12px 16px 4px 18px; font-weight: 700; font-size: 0.95rem; display: flex; align-items: center; min-height: 34px; }
+      .list-head span { flex: 1; }
+      .list-head .btn-soft { display: flex; align-items: center; gap: 4px; padding: 7px 12px; font-size: 0.84rem; }
       .meal {
         display: flex; align-items: center; gap: 11px;
         padding: 9px 16px; border-bottom: 1px solid var(--border); cursor: pointer;
@@ -119,6 +125,26 @@ export class CalendarView extends LitElement {
     void this.load();
   }
 
+  // 선택한 날에 먹은 기록 추가 - 요리 고르기 → 사진(선택). 없는 요리는 새 메뉴로
+  private async addRecord(): Promise<void> {
+    const date = this.selected;
+    const picked = await pickRecipe({
+      title: `${fmtDateLong(date, today())} 기록`,
+      done: this.meals.filter((m) => m.eaten_on === date).map((m) => m.recipe_id),
+    });
+    if (!picked) return;
+    if ('recipe' in picked) {
+      const input = await openMealSheet({ recipeName: picked.recipe.name, date });
+      if (!input) return;
+      await saveMeal(picked.recipe.id, input);
+    } else {
+      const input = await openMenuSheet({ name: picked.newName, date });
+      if (!input) return;
+      await addMenu(input);
+    }
+    await this.load();
+  }
+
   private renderDay(date: number, byDay: Map<string, CalendarMeal[]>, base: string): TemplateResult {
     const value = ymd(this.year, this.month, date);
     const meals = byDay.get(value) ?? [];
@@ -168,7 +194,12 @@ export class CalendarView extends LitElement {
         ${Array.from({ length: daysInMonth }, (_, i) => this.renderDay(i + 1, byDay, base))}
       </div>
 
-      <div class="list-head">${fmtDateLong(this.selected, base)}</div>
+      <div class="list-head">
+        <span>${fmtDateLong(this.selected, base)}</span>
+        ${this.selected <= base
+          ? html`<button class="btn-soft" @click=${(): void => void this.addRecord()}>${icon('plus', 16)} 기록</button>`
+          : nothing}
+      </div>
       ${dayMeals.length === 0
         ? html`<div class="empty">먹은 기록이 없어요</div>`
         : dayMeals.map(

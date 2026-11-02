@@ -70,21 +70,26 @@ const TOAST_STYLE =
 
 let activeToast: HTMLElement | null = null;
 
-/**
- * 하단 토스트 표시 (인아웃 애니메이션). actionLabel을 주면 액션 버튼(예: 취소)이 붙는다.
- * @param duration 자동 닫힘(ms), 기본 5초
- */
-export function toast(
-  message: string,
-  opts?: { actionLabel?: string; onAction?: () => void; duration?: number },
-): void {
+// 기존 토스트를 바로 치우고 새 토스트를 올린다 (인 애니메이션)
+function showToast(el: HTMLElement): void {
   activeToast?.remove();
-  const el = document.createElement('div');
   el.style.cssText = TOAST_STYLE;
+  document.body.appendChild(el);
+  activeToast = el;
+  el.animate(
+    [
+      { opacity: 0, transform: 'translateX(-50%) translateY(16px)' },
+      { opacity: 1, transform: 'translateX(-50%)' },
+    ],
+    { duration: 220, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.1)' },
+  );
+}
 
+// 아웃 애니메이션 후 제거 (여러 번 불려도 한 번만)
+function makeDismiss(el: HTMLElement): () => void {
   let dismissed = false;
-  const dismiss = (): void => {
-    if (dismissed) return;
+  return (): void => {
+    if (dismissed || !el.isConnected) return;
     dismissed = true;
     el.animate(
       [
@@ -94,12 +99,27 @@ export function toast(
       { duration: 180, easing: 'ease-in', fill: 'forwards' },
     ).finished.then(() => el.remove());
   };
+}
 
+function toastText(message: string): HTMLSpanElement {
   const span = document.createElement('span');
   span.textContent = message;
   // 한 줄 유지, 넘치면 말줄임
   span.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;';
-  el.appendChild(span);
+  return span;
+}
+
+/**
+ * 하단 토스트 표시 (인아웃 애니메이션). actionLabel을 주면 액션 버튼(예: 취소)이 붙는다.
+ * @param duration 자동 닫힘(ms), 기본 5초
+ */
+export function toast(
+  message: string,
+  opts?: { actionLabel?: string; onAction?: () => void; duration?: number },
+): void {
+  const el = document.createElement('div');
+  const dismiss = makeDismiss(el);
+  el.appendChild(toastText(message));
   if (opts?.actionLabel) {
     const btn = document.createElement('button');
     btn.textContent = opts.actionLabel;
@@ -111,16 +131,51 @@ export function toast(
     };
     el.appendChild(btn);
   }
-  document.body.appendChild(el);
-  activeToast = el;
-  el.animate(
-    [
-      { opacity: 0, transform: 'translateX(-50%) translateY(16px)' },
-      { opacity: 1, transform: 'translateX(-50%)' },
-    ],
-    { duration: 220, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.1)' },
-  );
+  showToast(el);
   setTimeout(dismiss, opts?.duration ?? 5000);
+}
+
+export interface ProgressToast {
+  /** 문구와 진행률(0~1) 갱신 */
+  update(message: string, ratio: number): void;
+  close(): void;
+}
+
+/**
+ * 진행 막대가 붙은 토스트 - 자동으로 닫히지 않는다.
+ * 끝나면 toast()로 결과를 띄우면 바로 교체되고, 그냥 치우려면 close().
+ */
+export function progressToast(message: string): ProgressToast {
+  const el = document.createElement('div');
+  const text = toastText(message);
+  text.style.flex = '1';
+  const pct = document.createElement('span');
+  pct.style.cssText = 'font-variant-numeric:tabular-nums;color:#ffb48a;';
+  pct.textContent = '0%';
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:14px;align-items:center;';
+  row.append(text, pct);
+  const track = document.createElement('div');
+  track.style.cssText = 'height:4px;border-radius:2px;background:rgba(255,255,255,0.18);overflow:hidden;';
+  const bar = document.createElement('div');
+  bar.style.cssText = 'height:100%;width:0;background:#ffb48a;border-radius:2px;transition:width 0.2s ease-out;';
+  track.appendChild(bar);
+  el.append(row, track);
+  showToast(el);
+  // 세로 배치 + 진행 막대가 보이게 폭 확보
+  el.style.flexDirection = 'column';
+  el.style.alignItems = 'stretch';
+  el.style.gap = '8px';
+  el.style.width = 'min(320px, 90vw)';
+  return {
+    update(message: string, ratio: number): void {
+      const r = Math.max(0, Math.min(1, ratio));
+      text.textContent = message;
+      pct.textContent = `${Math.round(r * 100)}%`;
+      bar.style.width = `${r * 100}%`;
+    },
+    close: makeDismiss(el),
+  };
 }
 
 // ── 확인 다이얼로그 (window.confirm 대체, 인아웃 애니메이션) ─────

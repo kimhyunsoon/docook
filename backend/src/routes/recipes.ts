@@ -89,7 +89,7 @@ export async function recipeRoutes(app: FastifyInstance): Promise<void> {
     return recipe;
   });
 
-  // 등록 (앱 UI 없음 - Claude 레시피 등록 전용). ?dry_run=1 이면 해석 결과만 돌려준다
+  // 등록 - Claude 레시피 등록, 앱의 메뉴 추가(이름·분류만)가 함께 쓴다. ?dry_run=1 이면 해석 결과만 돌려준다
   app.post<{ Querystring: { dry_run?: string } }>('/', async (req, reply) => {
     const { recipe, errors } = resolveRecipe(req.body);
     if (!recipe) return sendValidation(reply, errors);

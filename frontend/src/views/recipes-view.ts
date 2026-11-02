@@ -5,8 +5,10 @@ import { toast } from '../ui.js';
 import { icon } from '../icons.js';
 import { parseHash, replaceHashQuery } from '../router.js';
 import { cachedRecipes, loadRecipes } from '../store.js';
-import { undoToday, saveMeal } from '../actions.js';
+import { undoToday, saveMeal, addMenu } from '../actions.js';
+import { CATEGORY_ORDER } from '../fmt.js';
 import { openMealSheet } from '../sheets/meal-sheet.js';
+import { openMenuSheet } from '../sheets/menu-sheet.js';
 import type { RecipeSummary } from '../types.js';
 import '../components/recipe-item.js';
 
@@ -18,9 +20,6 @@ const SORTS: { key: SortKey; label: string }[] = [
   { key: 'stale', label: '오래 안 먹은' },
   { key: 'country', label: '국가별' },
 ];
-
-// 레시피 분류 순서 (backend vocab.ts RECIPE_CATEGORIES와 동일)
-const CATEGORY_ORDER = ['한국', '일본', '중국', '대만', '미국', '프랑스', '이탈리아', '인도네시아', '태국', '베트남', '인도', '멕시코', '퓨전'];
 
 // null(안 먹음)은 방향과 무관하게 항상 마지막
 function cmpDate(a: string | null, b: string | null, desc: boolean): number {
@@ -60,9 +59,11 @@ export class RecipesView extends LitElement {
         padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
         border-bottom: 1px solid var(--border);
       }
+      .search-row { display: flex; align-items: center; gap: 8px; }
+      .search-row .add { color: var(--accent); background: var(--accent-soft); border-radius: 999px; width: 36px; height: 36px; padding: 0; flex-shrink: 0; }
       /* iOS 검색 필드 - 캡슐형, 시스템 fill(tertiarySystemFill) 배경, 포커스 링 없음 */
       .search {
-        position: relative;
+        position: relative; flex: 1; min-width: 0;
         display: flex; align-items: center;
         height: 36px; border-radius: 999px;
         background: var(--fill);
@@ -189,6 +190,14 @@ export class RecipesView extends LitElement {
     await this.load();
   }
 
+  // 메뉴 추가 (이름·국가·사진) - 추가 후 그 메뉴 상세로
+  private async onAddMenu(): Promise<void> {
+    const input = await openMenuSheet();
+    if (!input) return;
+    const id = await addMenu(input);
+    if (id !== null) location.hash = `#/recipes/${id}`;
+  }
+
   // 당겨서 새로고침 (문서 최상단에서만)
   private onTouchStart = (e: TouchEvent): void => {
     this.touchStartY = window.scrollY === 0 ? (e.touches[0]?.clientY ?? 0) : -1;
@@ -273,19 +282,22 @@ export class RecipesView extends LitElement {
         @touchend=${this.onTouchEnd}
       >
         <div class="top">
-          <label class="search">
-            <span class="lead">${icon('search', 15)}</span>
-            <input
-              type="search"
-              enterkeyhint="search"
-              placeholder=${this.placeholder || '재료로 검색해보세요!'}
-              .value=${this.q}
-              @input=${(e: Event): void => { this.q = (e.target as HTMLInputElement).value; }}
-            >
-            ${this.q
-              ? html`<button class="clear" aria-label="지우기" @click=${(e: Event): void => { e.preventDefault(); this.q = ''; }}>${icon('x', 12)}</button>`
-              : nothing}
-          </label>
+          <div class="search-row">
+            <label class="search">
+              <span class="lead">${icon('search', 15)}</span>
+              <input
+                type="search"
+                enterkeyhint="search"
+                placeholder=${this.placeholder || '재료로 검색해보세요!'}
+                .value=${this.q}
+                @input=${(e: Event): void => { this.q = (e.target as HTMLInputElement).value; }}
+              >
+              ${this.q
+                ? html`<button class="clear" aria-label="지우기" @click=${(e: Event): void => { e.preventDefault(); this.q = ''; }}>${icon('x', 12)}</button>`
+                : nothing}
+            </label>
+            <button class="btn-icon add" aria-label="메뉴 추가" @click=${(): void => void this.onAddMenu()}>${icon('plus', 20)}</button>
+          </div>
           <div class="sort-row">
             ${SORTS.map(
               (s) => html`
