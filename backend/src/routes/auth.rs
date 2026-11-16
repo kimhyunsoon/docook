@@ -26,7 +26,7 @@ async fn login(req: Req) -> HResult {
         db::get(
             &c,
             "SELECT id, username, password_hash FROM users WHERE username = ?",
-            &[db::from_json(username.as_ref())?],
+            &db::js_arg(username.as_ref()),
         )?
     };
     let ok = match &user {

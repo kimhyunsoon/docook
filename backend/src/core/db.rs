@@ -110,6 +110,8 @@ pub enum P {
     Null,
     Num(f64),
     Text(String),
+    /// 바인딩할 수 없는 JS 값(boolean·중첩 배열 등) - 개수 검사 뒤 bind 에서 TypeError
+    Bad,
 }
 
 impl P {
@@ -118,6 +120,7 @@ impl P {
             P::Null => Sql::Null,
             P::Num(f) => Sql::Real(*f),
             P::Text(s) => Sql::Text(s.clone()),
+            P::Bad => Sql::Null,
         }
     }
 }
@@ -159,9 +162,29 @@ pub fn from_json(v: Option<&Value>) -> Result<P> {
         None | Some(Value::Null) => Ok(P::Null),
         Some(Value::Number(n)) => Ok(P::Num(js::as_f64(n))),
         Some(Value::String(s)) => Ok(P::Text(s.clone())),
-        Some(_) => Err(DbError::msg(
-            "SQLite3 can only bind numbers, strings, bigints, buffers, and null",
-        )),
+        Some(_) => Err(DbError::msg(BIND_ERROR)),
+    }
+}
+
+const BIND_ERROR: &str = "SQLite3 can only bind numbers, strings, bigints, buffers, and null";
+
+/// better-sqlite3 의 인자 펼치기: 배열 인자는 원소가 각각 파라미터가 되고(한 단계만),
+/// 일반 객체는 이름 붙은 파라미터 묶음이라 익명(?) 자리를 채우지 않는다. 개수가 틀리면 bind 에서
+/// 'Too many/few parameter values', 개수는 맞는데 boolean·중첩 배열이면 BIND_ERROR.
+pub fn js_arg(v: Option<&Value>) -> Vec<P> {
+    fn one(v: &Value) -> P {
+        match v {
+            Value::Null => P::Null,
+            Value::Number(n) => P::Num(js::as_f64(n)),
+            Value::String(s) => P::Text(s.clone()),
+            _ => P::Bad,
+        }
+    }
+    match v {
+        None => vec![P::Null],
+        Some(Value::Array(a)) => a.iter().map(one).collect(),
+        Some(Value::Object(_)) => vec![],
+        Some(x) => vec![one(x)],
     }
 }
 
@@ -179,6 +202,9 @@ fn bind(stmt: &mut Statement<'_>, params: &[P]) -> Result<()> {
         } else {
             "Too few parameter values were provided"
         }));
+    }
+    if params.iter().any(|p| matches!(p, P::Bad)) {
+        return Err(DbError::msg(BIND_ERROR));
     }
     for (i, p) in params.iter().enumerate() {
         stmt.raw_bind_parameter(i + 1, p.sql())?;
