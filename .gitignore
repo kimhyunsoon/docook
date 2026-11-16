@@ -7,3 +7,4 @@ dist/
 data/
 backend/data/
 .idea/
+target/

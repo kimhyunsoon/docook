@@ -4,9 +4,9 @@
 
 dogroo·donoti와 같은 구조다.
 
-- **backend**: TypeScript ESM + Fastify 5 + better-sqlite3(WAL). 포트 4346 (상수). 세션 쿠키 인증(argon2id + SQLite 세션 스토어) **또는 API 토큰**(`Authorization: Bearer`, Claude 레시피 등록용).
+- **backend**: Rust (axum + rusqlite, SQLite WAL). 포트 4346 (상수). 세션 쿠키 인증(argon2id + SQLite 세션 스토어) **또는 API 토큰**(`Authorization: Bearer`, Claude 레시피 등록용).
 - **frontend**: Lit 3 + Vite 6. dev 포트 4347, `/api` 프록시로 로컬·프로덕션 모두 동일 오리진.
-- **DB**: 단일 SQLite 파일 (`{DATA_DIR}/docook.db`). 마이그레이션 도구 없음 - `schema.sql`(IF NOT EXISTS) + `ingredient-pool.sql`(기본 재료·별칭, ON CONFLICT 무시)을 기동 시마다 적용. 기존 DB 컬럼 추가는 `db.ts`의 `migrate()`에 `PRAGMA table_info` 분기로.
+- **DB**: 단일 SQLite 파일 (`{DATA_DIR}/docook.db`). 마이그레이션 도구 없음 - `schema.sql`(IF NOT EXISTS) + `ingredient-pool.sql`(기본 재료·별칭, ON CONFLICT 무시)을 기동 시마다 적용. 기존 DB 컬럼 추가는 `db.rs`의 `migrate()`에 `PRAGMA table_info` 분기로.
 - **시크릿**: 세션 시크릿·API 토큰은 최초 기동 시 자동 생성해 데이터 디렉토리에 보관 (`.session-secret`, `.api-token`). API 토큰은 설정 화면에서 확인·재발급(세션 전용 라우트). env로 관리할 시크릿은 초기 계정뿐.
 
 ## 리포 구조
@@ -15,13 +15,15 @@ dogroo·donoti와 같은 구조다.
 docook/
 ├── assets/                  # 로고 SVG 원본 + webp + 생성기(generate-logo.mjs)
 ├── backend/src/
-│   ├── server.ts            # 부트스트랩 (라우트 등록, 최초 계정, /api/vocab, 사진 파일 서빙)
-│   ├── config.ts            # 상수 + 시크릿·API 토큰 자동 생성
-│   ├── auth.ts              # requireAuth(세션|토큰) / requireSession
-│   ├── vocab.ts             # 정규화 고정 어휘 (요리 분류·재료 분류·단위·조리 동작)
-│   ├── recipe-input.ts      # 등록 입력 검증 + 재료 표준명 해석 + 저장
+│   ├── main.rs              # 부트스트랩 (라우트 등록, 최초 계정, /api/vocab)
+│   ├── config.rs            # 상수 + 시크릿·API 토큰 자동 생성
+│   ├── auth.rs              # require_auth(세션|토큰) / require_session
+│   ├── vocab.rs             # 정규화 고정 어휘 (요리 분류·재료 분류·단위·조리 동작)
+│   ├── recipe_input.rs      # 등록 입력 검증 + 재료 표준명 해석 + 저장
+│   ├── db.rs                # DB 열기 + 마이그레이션
 │   ├── schema.sql / ingredient-pool.sql
-│   └── routes/              # auth · recipes · ingredients · meals · photos · settings
+│   ├── core/                # 4개 앱(dogroo·donoti·doquiz·docook) 공통 사본 - 세션·DB·JSON·multipart·정적 파일
+│   └── routes/              # auth · recipes · ingredients · meals · photos · settings · files(사진 파일 서빙)
 ├── frontend/src/
 │   ├── app-root.ts          # 해시 라우터 (#/recipes #/recipes/:id #/calendar #/settings #/login)
 │   ├── actions.ts           # 먹은 기록·사진 업로드 공용 동작
@@ -38,7 +40,7 @@ docook/
 | 테이블 | 요점 |
 |---|---|
 | `users` | 초기 계정 1개 (env로 부트스트랩, 회원가입 없음) |
-| `sessions` | session-store.ts가 자체 생성. 재배포에도 로그인 유지 |
+| `sessions` | `core/session.rs`가 자체 생성(@fastify/session 과 같은 형식). 재배포에도 로그인 유지 |
 | `ingredients` | 재료 마스터 - 표준명(UNIQUE) + 재료 분류 |
 | `ingredient_aliases` | 별칭 → 표준 재료. 해석은 공백 무시 비교 (`다진마늘` = `다진 마늘`) |
 | `recipes` | 요리 - 이름(UNIQUE, 대소문자 무시)·분류·한 줄 소개·팁 |

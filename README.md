@@ -5,9 +5,11 @@
 ## 개발
 
 ```sh
-./dev.sh   # backend(:4346) + frontend(:4347) 동시 기동
+./dev.sh   # backend(Rust :4346) + frontend(:4347) 동시 기동
            # → http://localhost:4347 접속
 ```
+
+- 필요: Rust 툴체인(`rustup`, 버전은 `backend/rust-toolchain.toml`), Node 22 + pnpm(frontend)
 
 - 초기 계정: `backend/.env`의 `INITIAL_USERNAME` / `INITIAL_PASSWORD`
 - 레시피 등록: `backend/.env`의 `DOCOOK_URL`·`DOCOOK_TOKEN`(앱 설정 화면에서 복사)을 채우고, 이 리포에서 연 Claude Code에 "이 레시피 등록해줘" + 레시피 글 (`CLAUDE.md`가 등록 절차를 안내)
