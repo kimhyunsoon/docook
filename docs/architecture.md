@@ -22,7 +22,7 @@ docook/
 │   ├── recipe_input.rs      # 등록 입력 검증 + 재료 표준명 해석 + 저장
 │   ├── db.rs                # DB 열기 + 마이그레이션
 │   ├── schema.sql / ingredient-pool.sql
-│   ├── core/                # 4개 앱(dogroo·donoti·doquiz·docook) 공통 사본 - 세션·DB·JSON·multipart·정적 파일
+│   ├── core/                # 4개 앱(dogroo·donoti·doquiz·docook) 공통 사본 - 세션·DB·JSON·multipart·정적 파일 (고칠 때 네 곳을 같이)
 │   └── routes/              # auth · recipes · ingredients · meals · photos · settings · files(사진 파일 서빙)
 ├── frontend/src/
 │   ├── app-root.ts          # 해시 라우터 (#/recipes #/recipes/:id #/calendar #/settings #/login)
@@ -30,7 +30,7 @@ docook/
 │   ├── components/          # tab-bar · recipe-item(목록 행 + 12주 미니 그래프)
 │   ├── sheets/              # sheet-base · meal-sheet(날짜+사진) · menu-sheet(메뉴 추가) · recipe-picker(달력 기록 추가용 요리 고르기) · date-sheet(월 달력) · photo-lightbox
 │   └── views/               # login · recipes · recipe-detail · calendar · settings
-├── deploy/                  # docker-compose.yml + deploy.sh (donoti와 동일)
+├── deploy/                  # docker-compose.yml + deploy.sh (서비스별 빌드, 4개 앱 공통 구조)
 ├── docs/                    # architecture · recipe-registration(Claude 등록 절차) · recipe-normalization(정규화 규칙) · server-setup.sh
 └── CLAUDE.md                # Claude Code 진입점 - 등록 요청 시 docs 절차로 안내 (.claude/는 전역 gitignore라 쓰지 않음)
 ```
@@ -80,7 +80,9 @@ docook/
 
 ## CI/CD
 
-push to main → GitHub Actions가 backend/frontend 빌드 검증 → 성공 시 `https://docook.sudosoon.org/deploy/hook` 웹훅 호출 (Secrets: `DEPLOY_URL`, `DEPLOY_KEY`) → 서버 webhook이 `deploy/deploy.sh` 실행 (`git reset --hard FETCH_HEAD` + `docker compose up -d --build --remove-orphans`). 로그: `/var/log/docook-deploy.log`.
+push to main → GitHub Actions가 backend(cargo fmt·clippy·test)와 frontend(빌드)를 병렬 검증 → 둘 다 통과하면 `https://docook.sudosoon.org/deploy/hook` 웹훅 호출 (Secrets: `DEPLOY_URL`, `DEPLOY_KEY`) → 서버 webhook이 `deploy/deploy.sh` 실행 (`git reset --hard FETCH_HEAD` 후 바뀐 서비스만 `docker compose up -d --build`).
+
+- 배포 스크립트(`deploy/deploy.sh`)는 서비스(backend·frontend)마다 마지막으로 배포에 성공한 커밋을 `/var/lib/do-deploy/docook/` 에 기록하고, 그 뒤 해당 경로(backend: `backend/`, frontend: `frontend/`, 둘 다 `deploy/docker-compose.yml`)가 바뀌었거나 컨테이너가 없는 서비스만 빌드한다. 실패하면 기록이 남지 않아 다음 배포에서 다시 빌드한다. 전부 다시 빌드: `FORCE=1 bash deploy/deploy.sh`. 4개 앱(dogroo·donoti·docook·doquiz)이 같은 잠금(`/tmp/do-series-deploy.lock`)을 써서 서버 빌드는 한 번에 하나씩 돈다. 로그: `/var/log/docook-deploy.log`.
 
 ## 서버 셋업
 
