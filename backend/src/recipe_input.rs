@@ -242,7 +242,16 @@ pub fn resolve_recipe(
             errors.push(format!("{at}: '{resolved_name}'가 같은 묶음에 중복"));
         }
         seen.insert(dup_key);
-        let alternative = ing.get("alternative") == Some(&Value::Bool(true));
+        let mut flag = |k: &str| match nullish(ing.get(k)) {
+            None => false,
+            Some(Value::Bool(v)) => *v,
+            Some(_) => {
+                errors.push(format!("{at}.{k}: true/false 또는 생략"));
+                false
+            }
+        };
+        let optional = flag("optional");
+        let alternative = flag("alternative");
         let prev = ingredients.last();
         if alternative && prev.is_none_or(|p| p.section != section) {
             errors.push(format!(
@@ -259,7 +268,7 @@ pub fn resolve_recipe(
             unit,
             note: text_or_null(ing.get("note")),
             section,
-            optional: ing.get("optional") == Some(&Value::Bool(true)),
+            optional,
             alternative,
         });
     }

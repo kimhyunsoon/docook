@@ -11,7 +11,11 @@ const CACHE_CONTROL: &str = "public, max-age=2592000, immutable";
 
 async fn file(req: Req) -> HResult {
     let rel = req.param("wildcard").to_string();
-    // TS 는 점파일도 내보낸다(root 가 photos/ 라 업로드 사진뿐). '..' 는 static_files 가 403
+    // 점으로 시작하는 이름(.hidden 등)은 404. '..' 는 static_files 가 403 으로 거부하므로 그쪽에 맡긴다
+    let segs = || rel.split('/');
+    if !segs().any(|s| s == "..") && segs().any(|s| s.starts_with('.')) {
+        return Ok(req.not_found());
+    }
     let root = Path::new(&CONFIG.data_dir).join("photos");
     Ok(
         match static_files::serve(&req, &root, &rel, CACHE_CONTROL).await {

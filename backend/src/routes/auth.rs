@@ -67,7 +67,8 @@ async fn me(req: Req) -> HResult {
         params![req.user_id()],
     )? {
         Some(u) => Ok(Reply::ok(Value::Object(u))),
-        None => Ok(Reply::empty(200)),
+        // 세션은 있는데 사용자가 지워졌으면 로그인 안 된 것으로
+        None => Ok(Reply::error(401, "unauthorized")),
     }
 }
 

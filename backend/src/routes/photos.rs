@@ -13,6 +13,7 @@ use crate::core::js;
 use crate::core::multipart::{self, Limits};
 use crate::core::session;
 use crate::params;
+use crate::routes::id_or_404;
 
 // 사진 + 축소본 2개 파트
 const LIMITS: Limits = Limits {
@@ -45,6 +46,7 @@ fn not_found() -> Reply {
 // 사진 업로드 (multipart: taken_on 필드 + file + thumb(선택, 클라이언트 축소본))
 // 사진 날짜 = 먹은 날짜 - 그날 먹은 기록도 함께 생성한다
 async fn upload(req: Req) -> HResult {
+    id_or_404!(req);
     let id = req.param("id").to_string();
     {
         let c = db::conn();
@@ -63,6 +65,11 @@ async fn upload(req: Req) -> HResult {
     for part in multipart::parts(&req, &LIMITS, false).await? {
         if part.is_file() {
             let ext = ext_by_mime(&part.mimetype);
+            // 사진·축소본 파트의 형식이 틀리면 조용히 버리지 않고 거부 (크기 검사보다 먼저)
+            let photo_part = part.fieldname == "file" || part.fieldname == "thumb";
+            if photo_part && ext.is_none() {
+                return Ok(Reply::error(400, "unsupported_type"));
+            }
             // part.toBuffer() - 크기 한도 초과면 413
             if part.too_large {
                 return Err(AppError {
@@ -124,6 +131,7 @@ fn find_photo(c: &rusqlite::Connection, id: &str) -> db::Result<Option<db::Row>>
 
 // 대표 사진 지정 / 해제(해제하면 최근 사진이 대표)
 async fn set_primary(req: Req) -> HResult {
+    id_or_404!(req);
     let c = db::conn();
     let Some(photo) = find_photo(&c, req.param("id"))? else {
         return Ok(not_found());
@@ -145,6 +153,7 @@ async fn set_primary(req: Req) -> HResult {
 }
 
 async fn unset_primary(req: Req) -> HResult {
+    id_or_404!(req);
     let c = db::conn();
     db::run(
         &c,
@@ -156,6 +165,7 @@ async fn unset_primary(req: Req) -> HResult {
 
 // 사진 날짜 변경 (그날 먹은 기록도 생성)
 async fn update(req: Req) -> HResult {
+    id_or_404!(req);
     let c = db::conn();
     let Some(photo) = find_photo(&c, req.param("id"))? else {
         return Ok(not_found());
@@ -178,6 +188,7 @@ async fn update(req: Req) -> HResult {
 }
 
 async fn delete(req: Req) -> HResult {
+    id_or_404!(req);
     let c = db::conn();
     let Some(photo) = find_photo(&c, req.param("id"))? else {
         return Ok(not_found());

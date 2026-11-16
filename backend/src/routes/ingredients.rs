@@ -2,7 +2,7 @@
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
-use super::{body_for, or_null, trim_of};
+use super::{body_for, id_or_404, or_null, string_list};
 use crate::auth::require_auth;
 use crate::core::app::{AppError, HResult, Pre, Reply, Req, Routes};
 use crate::core::db::{self, P};
@@ -42,10 +42,8 @@ async fn resolve(req: Req) -> HResult {
             let c = db::conn();
             find_ingredient(&c, s)?
         }
-        // 같은 키가 여러 번이면 배열 → squash(name) 에서 TypeError
-        Some(Value::Array(_)) => {
-            return Err(AppError::type_error("s.replace is not a function"));
-        }
+        // 같은 키가 여러 번(?name=a&name=b)이면 배열
+        Some(Value::Array(_)) => return Ok(Reply::error(400, "invalid_name")),
         _ => None,
     };
     match found {
@@ -54,30 +52,9 @@ async fn resolve(req: Req) -> HResult {
     }
 }
 
-/// for (const x of v) - 문자열은 코드 포인트 단위, 배열이 아니면 TypeError
-fn iterate(
-    v: Option<&Value>,
-    not_iterable: impl Fn(&Value) -> String,
-) -> Result<Vec<Value>, AppError> {
-    match or_null(v) {
-        None => Ok(vec![]),
-        Some(Value::Array(a)) => Ok(a.clone()),
-        Some(Value::String(s)) => Ok(s.chars().map(|c| json!(c.to_string())).collect()),
-        Some(x) => Err(AppError::type_error(not_iterable(x))),
-    }
-}
-
-fn add_aliases(c: &Connection, id: f64, aliases: Option<&Value>) -> Result<(), AppError> {
-    for raw in iterate(aliases, |_| "aliases is not iterable".into())? {
-        let alias = match &raw {
-            Value::String(s) => js::trim(s).to_string(),
-            Value::Null => {
-                return Err(AppError::type_error(
-                    "Cannot read properties of null (reading 'trim')",
-                ));
-            }
-            _ => return Err(AppError::type_error("raw.trim is not a function")),
-        };
+fn add_aliases(c: &Connection, id: f64, aliases: &[String]) -> Result<(), AppError> {
+    for raw in aliases {
+        let alias = js::trim(raw).to_string();
         if alias.is_empty() {
             continue;
         }
@@ -109,7 +86,8 @@ async fn create(req: Req) -> HResult {
     let b = body_for(&req, "name")?;
     let name = match or_null(b.get("name")) {
         None => None,
-        v => Some(trim_of(v, "req.body.name?")?),
+        Some(Value::String(s)) => Some(js::trim(s).to_string()),
+        Some(_) => return Ok(Reply::error(400, "invalid_name")),
     };
     let category = or_null(b.get("category")).cloned().unwrap_or(json!("기타"));
     let Some(name) = name.filter(|n| !n.is_empty()) else {
@@ -118,6 +96,9 @@ async fn create(req: Req) -> HResult {
     if !includes(INGREDIENT_CATEGORIES, Some(&category)) {
         return Ok(Reply::error(400, "invalid_category"));
     }
+    let Some(aliases) = string_list(b.get("aliases")) else {
+        return Ok(Reply::error(400, "invalid_aliases"));
+    };
     let c = db::conn();
     if let Some(existing) = find_ingredient(&c, &name)? {
         return Ok(Reply::json(
@@ -132,7 +113,7 @@ async fn create(req: Req) -> HResult {
             &[P::from(name.clone()), db::from_json(Some(&category))?],
         )?
         .last_insert_rowid;
-        add_aliases(c, new_id as f64, b.get("aliases"))?;
+        add_aliases(c, new_id as f64, &aliases)?;
         Ok::<_, AppError>(new_id)
     });
     match result {
@@ -141,32 +122,8 @@ async fn create(req: Req) -> HResult {
     }
 }
 
-/// better-sqlite3 stmt.run(...args) 의 인자 해석: 배열은 펼치고, 객체는 이름 붙은 파라미터(여기선 없음)
-fn spread_args(args: &[&Value], expected: usize) -> Result<Vec<P>, AppError> {
-    let mut out = vec![];
-    for a in args {
-        match a {
-            Value::Array(items) => {
-                for x in items {
-                    out.push(db::from_json(Some(x))?);
-                }
-            }
-            Value::Object(_) => {}
-            x => out.push(db::from_json(Some(x))?),
-        }
-    }
-    if out.len() != expected {
-        return Err(AppError::internal(if out.len() > expected {
-            "Too many parameter values were provided"
-        } else {
-            "Too few parameter values were provided"
-        }));
-    }
-    Ok(out)
-}
-
 async fn update(req: Req) -> HResult {
-    let id = js::string_to_number(req.param("id"));
+    let id = id_or_404!(req) as f64;
     let c = db::conn();
     if db::get(&c, "SELECT 1 FROM ingredients WHERE id = ?", &[P::Num(id)])?.is_none() {
         return Ok(Reply::error(404, "not_found"));
@@ -175,19 +132,24 @@ async fn update(req: Req) -> HResult {
     if b.contains_key("category") && !includes(INGREDIENT_CATEGORIES, b.get("category")) {
         return Ok(Reply::error(400, "invalid_category"));
     }
+    let name = match or_null(b.get("name")) {
+        None => None,
+        Some(Value::String(s)) => Some(js::trim(s).to_string()),
+        Some(_) => return Ok(Reply::error(400, "invalid_name")),
+    };
+    let (Some(add), Some(remove)) = (
+        string_list(b.get("add_aliases")),
+        string_list(b.get("remove_aliases")),
+    ) else {
+        return Ok(Reply::error(400, "invalid_aliases"));
+    };
     let result = db::transaction(&c, |c| {
-        if let Some(v) = or_null(b.get("name")) {
-            let Value::String(s) = v else {
-                return Err(AppError::type_error("b.name?.trim is not a function"));
-            };
-            let name = js::trim(s);
-            if !name.is_empty() {
-                db::run(
-                    c,
-                    "UPDATE ingredients SET name = ? WHERE id = ?",
-                    &[P::from(name), P::Num(id)],
-                )?;
-            }
+        if let Some(name) = name.as_deref().filter(|n| !n.is_empty()) {
+            db::run(
+                c,
+                "UPDATE ingredients SET name = ? WHERE id = ?",
+                &[P::from(name), P::Num(id)],
+            )?;
         }
         if js::truthy(b.get("category")) {
             db::run(
@@ -196,23 +158,12 @@ async fn update(req: Req) -> HResult {
                 &[db::from_json(b.get("category"))?, P::Num(id)],
             )?;
         }
-        add_aliases(c, id, b.get("add_aliases"))?;
-        let remove = iterate(b.get("remove_aliases"), |x| match x {
-            Value::Number(_) => format!(
-                "number {} is not iterable (cannot read property Symbol(Symbol.iterator))",
-                js::to_js_string(Some(x))
-            ),
-            Value::Bool(v) => format!(
-                "boolean {v} is not iterable (cannot read property Symbol(Symbol.iterator))"
-            ),
-            _ => "object is not iterable (cannot read property Symbol(Symbol.iterator))".into(),
-        })?;
-        for alias in remove {
-            let args = spread_args(&[&alias, &json!(id)], 2)?;
+        add_aliases(c, id, &add)?;
+        for alias in &remove {
             db::run(
                 c,
                 "DELETE FROM ingredient_aliases WHERE alias = ? AND ingredient_id = ?",
-                &args,
+                &[P::from(alias.as_str()), P::Num(id)],
             )?;
         }
         Ok::<_, AppError>(())
@@ -225,13 +176,26 @@ async fn update(req: Req) -> HResult {
 
 // 중복 재료 병합: 이 재료를 into_id로 합치고 이름·별칭은 into의 별칭이 된다
 async fn merge(req: Req) -> HResult {
+    id_or_404!(req);
+    // into_id 는 정수(숫자 또는 '155' 같은 정수 문자열)만
+    let into_id = body_for(&req, "into_id")?.get("into_id").cloned();
+    let valid = match &into_id {
+        Some(v @ Value::Number(_)) => js::is_integer(Some(v)),
+        Some(Value::String(s)) => {
+            let d = s.strip_prefix('-').unwrap_or(s);
+            !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit())
+        }
+        _ => false,
+    };
+    if !valid {
+        return Ok(Reply::error(400, "invalid_target"));
+    }
     let c = db::conn();
     let from = db::get(
         &c,
         "SELECT id, name FROM ingredients WHERE id = ?",
         params![req.param("id")],
     )?;
-    let into_id = body_for(&req, "into_id")?.get("into_id").cloned();
     let into = db::get(
         &c,
         "SELECT id FROM ingredients WHERE id = ?",
@@ -268,6 +232,7 @@ async fn merge(req: Req) -> HResult {
 
 // 사용 중이 아닌 재료만 삭제 가능
 async fn delete(req: Req) -> HResult {
+    id_or_404!(req);
     let c = db::conn();
     if db::get(
         &c,

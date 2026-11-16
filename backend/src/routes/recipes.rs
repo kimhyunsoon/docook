@@ -9,6 +9,7 @@ use crate::core::db::{self, P};
 use crate::core::js;
 use crate::params;
 use crate::recipe_input::{Saved, resolve_recipe, save_recipe};
+use crate::routes::id_or_404;
 
 // 목록용 - 대표 사진은 지정(is_primary) 우선, 없으면 최근 사진 (상세와 같은 정렬)
 // recent_meals: 목록의 미니 그래프용 최근 12주 먹은 날짜
@@ -100,6 +101,16 @@ fn get_recipe(c: &Connection, id: P) -> db::Result<Option<Value>> {
     Ok(Some(Value::Object(recipe)))
 }
 
+/// ?dry_run= 은 없음·'0'(저장)·'1'(검증만)만 받는다. 그 밖의 값은 실수로 저장되지 않게 400
+fn dry_run(req: &Req) -> Result<bool, Reply> {
+    match req.query("dry_run") {
+        None => Ok(false),
+        Some(Value::String(s)) if s == "0" => Ok(false),
+        Some(Value::String(s)) if s == "1" => Ok(true),
+        Some(_) => Err(Reply::error(400, "invalid_dry_run")),
+    }
+}
+
 fn send_validation(errors: Vec<String>) -> Reply {
     Reply::json(400, json!({ "error": "validation", "details": errors }))
 }
@@ -121,6 +132,7 @@ async fn list(_req: Req) -> HResult {
 }
 
 async fn detail(req: Req) -> HResult {
+    id_or_404!(req);
     let c = db::conn();
     match get_recipe(&c, P::from(req.param("id")))? {
         None => Ok(Reply::error(404, "not_found")),
@@ -130,6 +142,10 @@ async fn detail(req: Req) -> HResult {
 
 // 등록 - Claude 레시피 등록, 앱의 메뉴 추가(이름·분류만)가 함께 쓴다. ?dry_run=1 이면 해석 결과만 돌려준다
 async fn create(req: Req) -> HResult {
+    let dry_run = match dry_run(&req) {
+        Ok(d) => d,
+        Err(r) => return Ok(r),
+    };
     let body = req.body();
     let c = db::conn();
     let (recipe, errors) = resolve_recipe(&c, body.as_ref())?;
@@ -146,7 +162,7 @@ async fn create(req: Req) -> HResult {
             json!({ "error": "duplicate_name", "id": existing["id"], "hint": "PUT /api/recipes/:id 로 수정" }),
         ));
     }
-    if req.query_str("dry_run") == Some("1") {
+    if dry_run {
         return Ok(Reply::ok(
             json!({ "dry_run": true, "recipe": recipe.to_json() }),
         ));
@@ -158,7 +174,11 @@ async fn create(req: Req) -> HResult {
 
 // 전체 교체 수정
 async fn update(req: Req) -> HResult {
-    let id = js::string_to_number(req.param("id"));
+    let id = id_or_404!(req) as f64;
+    let dry_run = match dry_run(&req) {
+        Ok(d) => d,
+        Err(r) => return Ok(r),
+    };
     let body = req.body();
     let c = db::conn();
     if db::get(&c, "SELECT 1 FROM recipes WHERE id = ?", &[P::Num(id)])?.is_none() {
@@ -168,7 +188,7 @@ async fn update(req: Req) -> HResult {
     let Some(mut recipe) = recipe else {
         return Ok(send_validation(errors));
     };
-    if req.query_str("dry_run") == Some("1") {
+    if dry_run {
         return Ok(Reply::ok(
             json!({ "dry_run": true, "recipe": recipe.to_json() }),
         ));
@@ -189,6 +209,7 @@ async fn update(req: Req) -> HResult {
 
 // 삭제 - 먹은 기록·사진 파일까지 함께 정리
 async fn delete(req: Req) -> HResult {
+    id_or_404!(req);
     let c = db::conn();
     let photos = db::all(
         &c,

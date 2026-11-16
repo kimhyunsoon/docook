@@ -6,6 +6,7 @@ use crate::core::app::{HResult, Pre, Reply, Req, Routes};
 use crate::core::dates::{self, today_str};
 use crate::core::db::{self, P};
 use crate::params;
+use crate::routes::id_or_404;
 
 // 실제 존재하는 YYYY-MM-DD 인지 (2026-02-30 같은 값 거부)
 pub fn is_valid_date(v: Option<&Value>) -> bool {
@@ -42,6 +43,7 @@ pub fn record_meal(c: &Connection, recipe_id: P, eaten_on: &str) -> db::Result<(
 }
 
 async fn create(req: Req) -> HResult {
+    id_or_404!(req);
     let Some(at) = check_eaten_on(req.field_opt("eaten_on").as_ref()) else {
         return Ok(Reply::error(400, "invalid_date"));
     };
@@ -61,6 +63,7 @@ async fn create(req: Req) -> HResult {
 
 // 날짜로 취소 ('today' = 오늘) - 목록의 체크 버튼 재탭. 그날 사진은 남는다
 async fn delete_by_date(req: Req) -> HResult {
+    id_or_404!(req);
     let date = match req.param("date") {
         "today" => today_str(),
         d => d.to_string(),
@@ -75,6 +78,7 @@ async fn delete_by_date(req: Req) -> HResult {
 }
 
 async fn delete(req: Req) -> HResult {
+    id_or_404!(req);
     let c = db::conn();
     db::run(
         &c,

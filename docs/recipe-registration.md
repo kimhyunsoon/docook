@@ -66,6 +66,7 @@ curl -sS -X POST "$DOCOOK_URL/api/recipes?dry_run=1" -H "Authorization: Bearer $
   -H "Content-Type: application/json" --data-binary @recipe.json
 ```
 
+- `dry_run`은 `1`(검증만)과 `0`(저장)만 받는다. 다른 값은 저장하지 않고 `400 invalid_dry_run`. `optional`·`alternative`는 `true`/`false`만(생략 가능).
 - `400 {error:'validation', details:[...]}`: 항목별 사유를 보고 고친다. 재료 마스터에 없다는 오류는 기존 재료의 다른 표기인지 먼저 확인(→ 표준명 사용 + 별칭 등록), 정말 새 재료일 때만 `category`를 붙인다.
 - `409 duplicate_name`: 같은 요리면 사용자 확인 후 `PUT /api/recipes/:id` (전체 교체).
 - 통과하면 응답의 해석 결과(`matched: alias|new` 포함)로 사용자에게 **미리보기**를 보여준다: 분류, 재료(표준명으로 바뀐 것·새로 생길 재료 표시), 대체 재료 묶음, 단계, 원문에서 뺀 비정량 표현. 사용자가 확인하면 등록한다.
@@ -84,8 +85,8 @@ curl -sS -X POST "$DOCOOK_URL/api/recipes" -H "Authorization: Bearer $DOCOOK_TOK
 | 요청 | 용도 |
 |---|---|
 | `GET /api/ingredients/resolve?name=` | 이름(별칭 포함) → 표준 재료. 한글은 `curl -G --data-urlencode "name=대파"`로 |
-| `POST /api/ingredients {name, category, aliases?}` | 재료 생성 |
-| `PATCH /api/ingredients/:id {name?, category?, add_aliases?, remove_aliases?}` | 수정·별칭 추가 |
-| `POST /api/ingredients/:id/merge {into_id}` | 중복 병합 (사용자 확인 후) |
+| `POST /api/ingredients {name, category, aliases?}` | 재료 생성 (별칭은 문자열 배열, 아니면 `400 invalid_aliases`) |
+| `PATCH /api/ingredients/:id {name?, category?, add_aliases?, remove_aliases?}` | 수정·별칭 추가 (별칭 목록은 문자열 배열) |
+| `POST /api/ingredients/:id/merge {into_id}` | 중복 병합 (사용자 확인 후). `into_id`는 정수 |
 | `DELETE /api/ingredients/:id` | 미사용 재료만 삭제 |
 | `DELETE /api/recipes/:id` | 레시피 삭제 (먹은 기록·사진 포함 - 반드시 사용자 확인) |
