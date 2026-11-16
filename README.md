@@ -16,12 +16,10 @@
 
 ## 로고
 
-`assets/`의 SVG가 원본, `assets/generate-logo.mjs`가 생성기(냄비 마크 + Quicksand Bold 워드마크). 파비콘·아이콘 재생성:
+`assets/docook-mark.svg`가 마크 원본(단색 벡터), `assets/generate-logo.mjs`가 마크·워드마크 SVG 생성기. 아이콘·파비콘 규칙과 재생성 명령은 dogroo [docs/icon-guide.md](../dogroo/docs/icon-guide.md) 를 따른다.
 
 ```sh
-rsvg-convert -w 406 assets/docook-text.svg | magick - -define webp:lossless=true frontend/public/logo-text.webp
+python3 ../dogroo/assets/compose-icons.py assets/docook-mark.svg '#fbe9dd' assets
 for s in 180 192 512; do rsvg-convert -w $s assets/icon.svg -o frontend/public/icons/icon-$s.png; done
 rsvg-convert -w 512 assets/icon-maskable.svg -o frontend/public/icons/icon-512-maskable.png
-rsvg-convert -w 48 assets/docook-mark.svg -o frontend/public/favicon.png
-rsvg-convert -w 256 assets/docook-mark.svg | magick - -define icon:auto-resize=48,32,16 frontend/public/favicon.ico
 ```
