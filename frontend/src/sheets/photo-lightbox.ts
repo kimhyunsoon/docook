@@ -46,19 +46,33 @@ export class PhotoLightbox extends LitElement {
       .top button { padding: 4px 8px; }
       .strip {
         flex: 1;
+        min-height: 0;
         display: flex;
         overflow-x: auto;
+        overflow-y: hidden;
         scroll-snap-type: x mandatory;
+        overscroll-behavior-x: contain;
+        touch-action: pan-x;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
       }
       .strip::-webkit-scrollbar { display: none; }
-      .strip img {
-        width: 100%;
+      /* WebKit 은 img 자체를 스냅 대상으로 두면 넘김이 막히는 경우가 있어 블록으로 감싼다 */
+      .slide {
+        flex: 0 0 100%;
         height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        scroll-snap-align: start;
+        scroll-snap-stop: always;
+      }
+      .slide img {
+        max-width: 100%;
+        max-height: 100%;
         object-fit: contain;
-        scroll-snap-align: center;
-        flex-shrink: 0;
+        -webkit-user-drag: none;
+        user-select: none;
       }
       .bottom {
         display: flex;
@@ -143,7 +157,7 @@ export class PhotoLightbox extends LitElement {
           <button @click=${(): void => this.requestClose?.()} aria-label="닫기">${icon('x', 22)}</button>
         </div>
         <div class="strip" @scroll=${this.onScroll}>
-          ${this.photos.map((p) => html`<img src=${fileUrl(p.path)} alt="" loading="lazy">`)}
+          ${this.photos.map((p) => html`<div class="slide"><img src=${fileUrl(p.path)} alt="" draggable="false"></div>`)}
         </div>
         <div class="bottom">
           <span class="date">${current ? fmtDateLong(current.taken_on, today()) : ''}</span>
